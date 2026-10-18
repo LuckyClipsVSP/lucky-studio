@@ -1,17 +1,61 @@
+import os
+import time
+import json
+import subprocess
 from flask import Flask, request, jsonify, send_file
-from pipeline import processar_viral
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CLIPS_FILE = os.path.join(BASE_DIR, "clips_prontos.json")
+STATUS_FILE = os.path.join(BASE_DIR, "status.txt")
+INDEX_PATH = os.path.join(BASE_DIR, "index.html")
 
 app = Flask(__name__)
 
 @app.route('/')
-def index(): return send_file('index.html')
+def index():
+    if os.path.exists(INDEX_PATH):
+        return send_file(INDEX_PATH)
+    return "Arquivo index.html não encontrado.", 404
 
 @app.route('/generate', methods=['POST'])
 def generate():
-    link = request.json.get('link')
-    # Para testes iniciais, vamos rodar direto e ver se o erro aparece no log
-    resultado = processar_viral(link)
-    return jsonify({"status": "Concluído", "url": resultado})
+    data = request.get_json() or {}
+    link = data.get('link')
+    if not link:
+        return jsonify({"error": "Link ausente"}), 400
+
+    # Limpa estados anteriores
+    with open(CLIPS_FILE, "w", encoding="utf-8") as f:
+        json.dump([], f)
+    
+    with open(STATUS_FILE, "w", encoding="utf-8") as f:
+        f.write(f"1/4. [Gemini IA] Analisando o contexto do vídeo...|{int(time.time())}")
+
+    # Executa o pipeline de forma independente sem travar o servidor
+    subprocess.Popen(['python3', os.path.join(BASE_DIR, 'pipeline.py'), link])
+    return jsonify({"status": "Processo iniciado"})
+
+@app.route('/get_status')
+def get_status():
+    try:
+        msg = "Aguardando..."
+        start_time = int(time.time())
+        if os.path.exists(STATUS_FILE):
+            with open(STATUS_FILE, "r", encoding="utf-8") as f:
+                raw = f.read().split('|')
+                msg = raw[0]
+                if len(raw) > 1:
+                    start_time = int(raw[1])
+
+        clips = []
+        if os.path.exists(CLIPS_FILE):
+            with open(CLIPS_FILE, "r", encoding="utf-8") as f:
+                clips = json.load(f)
+
+        return jsonify({"status": msg, "start_time": start_time, "clips": clips})
+    except Exception as e:
+        return jsonify({"status": "Processando...", "clips": []})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001)
+    port = int(os.environ.get('PORT', 5001))
+    app.run(host='0.0.0.0', port=port)
