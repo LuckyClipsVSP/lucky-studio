@@ -35,6 +35,7 @@
         .ring { width: 40px; height: 40px; border: 3px solid #222; border-top: 3px solid var(--main); border-radius: 50%; animation: spin 1s infinite linear; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .card-body { padding: 15px; font-size: 14px; font-weight: bold; text-align: center; color: #ddd; }
+        .erro-box { color: #ff4757; font-size: 12px; padding: 20px; text-align: center; }
     </style>
 </head>
 <body>
@@ -92,15 +93,22 @@
             document.getElementById('timer').innerText = Math.floor(diff/60).toString().padStart(2,'0') + ":" + (diff%60).toString().padStart(2,'0');
 
             if(data.clips && data.clips.length > 0) {
-                document.getElementById('grid').innerHTML = data.clips.map(clip => `
+                document.getElementById('grid').innerHTML = data.clips.map(clip => {
+                    let conteudoVideo = '';
+                    if (clip.status === 'pronto') {
+                        conteudoVideo = `<video controls src="${clip.url}"></video>`;
+                    } else if (clip.status === 'erro') {
+                        conteudoVideo = `<div class="loading erro-box">⚠️ FALHA NO CORTE<br><small style="color:#aaa;margin-top:5px;display:block">${clip.erro || 'Bloqueio de extração'}</small></div>`;
+                    } else {
+                        conteudoVideo = `<div class="loading"><div class="ring"></div><p style="font-size:11px;margin-top:12px;color:#00d4ff">PROCESSANDO SHORTS...</p></div>`;
+                    }
+
+                    return `
                     <div class="card">
-                        <div class="video-box">
-                            ${clip.status === 'pronto' ? `<video controls src="${clip.url}"></video>` : 
-                            `<div class="loading"><div class="ring"></div><p style="font-size:11px;margin-top:12px;color:#00d4ff">PROCESSANDO SHORTS...</p></div>`}
-                        </div>
+                        <div class="video-box">${conteudoVideo}</div>
                         <div class="card-body">${clip.title}</div>
-                    </div>
-                `).join('');
+                    </div>`;
+                }).join('');
             }
         }
     </script>
