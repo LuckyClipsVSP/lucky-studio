@@ -282,3 +282,7 @@ def run():
         list(ex.map(renderizar_cloudinary, [(i, c, video_url) for i, c in enumerate(cortes_enriquecidos)]))
 
     log("4/4. Concluído!")
+
+def run_wrapper(link):
+    sys.argv = ['pipeline.py', link]
+    run()
