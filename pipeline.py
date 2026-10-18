@@ -17,10 +17,9 @@ STATUS_FILE = os.path.join(BASE_DIR, "status.txt")
 CLIPS_FILE = os.path.join(BASE_DIR, "clips_prontos.json")
 
 # Chave informada para o Gemini
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "AQ.Ab8RN6JZulamkSotT8nTIAA78b7k4naGfKspQDHMMrV9CdGdSg")
-COBALT_API = "https://cobalt-production-aaf4.up.railway.app"
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "AQ.Ab8RN6JrtsbIYXinToEQOEO5eVwKDxXyy02XqJ_kNDEmpE4KJw")
+COBALT_URL = "https://cobalt-production-aaf4.up.railway.app"
 
-# Cloudinary (puxa das variáveis do Render)
 cloudinary.config(
     cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
     api_key=os.environ.get("CLOUDINARY_API_KEY"),
@@ -49,21 +48,20 @@ def salvar_clipes(clips):
             print(f"[ERRO JSON]: {e}")
 
 # ---------------------------------------------------------
-# 1. ANÁLISE COM O GOOGLE GEMINI
+# 1. ANÁLISE COM O GEMINI IA
 # ---------------------------------------------------------
 def analisar_com_gemini(youtube_url):
-    """Pede ao Gemini para analisar o vídeo e extrair 3 trechos virais."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
     
     prompt = f"""
-    Você é um editor profissional de vídeos curtos (Shorts/TikTok/Reels).
-    Analise o contexto deste vídeo: {youtube_url}
-    Selecione os 3 momentos mais marcantes, engraçados ou de retenção máxima de exatamente 30 segundos.
-    Responda EXCLUSIVAMENTE em formato JSON puro, sem blocos markdown:
+    Você é um editor profissional de Shorts/Reels/TikTok.
+    Analise o vídeo: {youtube_url}
+    Selecione os 3 momentos mais virais de 30 segundos cada.
+    Responda EXCLUSIVAMENTE em formato JSON puro, sem crases markdown:
     [
-      {{"start": 30, "title": "TITULO IMPACTANTE 1", "legenda": "LEGENDA CHAMATIVA 1"}},
-      {{"start": 90, "title": "TITULO IMPACTANTE 2", "legenda": "LEGENDA CHAMATIVA 2"}},
-      {{"start": 150, "title": "TITULO IMPACTANTE 3", "legenda": "LEGENDA CHAMATIVA 3"}}
+      {{"start": 30, "title": "MOMENTO INACREDITÁVEL", "legenda": "VOCÊ NÃO VAI ACREDITAR"}},
+      {{"start": 75, "title": "O SEGREDO REVELADO", "legenda": "PRESTE MUITA ATENÇÃO"}},
+      {{"start": 130, "title": "FINAL SURPREENDENTE", "legenda": "OLHA O QUE ACONTECEU"}}
     ]
     """
     
@@ -73,38 +71,64 @@ def analisar_com_gemini(youtube_url):
     }
     
     try:
-        resp = requests.post(url, json=payload, timeout=40)
-        data = resp.json()
-        texto = data['candidates'][0]['content']['parts'][0]['text']
-        inicio = texto.find("[")
-        fim = texto.rfind("]") + 1
-        return json.loads(texto[inicio:fim])
+        resp = requests.post(url, json=payload, timeout=35)
+        if resp.status_code == 200:
+            data = resp.json()
+            texto = data['candidates'][0]['content']['parts'][0]['text']
+            inicio = texto.find("[")
+            fim = texto.rfind("]") + 1
+            cortes = json.loads(texto[inicio:fim])
+            print("[GEMINI SUCESSO] Momentos virais identificados pela IA!")
+            return cortes
+        else:
+            print(f"[AVISO GEMINI] Resposta HTTP {resp.status_code}: {resp.text[:250]}")
     except Exception as e:
-        print(f"[AVISO GEMINI]: Falha ou chave incompatível ({e}). Usando cortes estratégicos padrão.")
-        return [
-            {"start": 30, "title": "MOMENTO BIZARRO", "legenda": "VOCÊ NÃO VAI ACREDITAR"},
-            {"start": 90, "title": "SURREAL DEMAIS", "legenda": "OLHA O QUE ACONTECEU"},
-            {"start": 150, "title": "INACREDITÁVEL", "legenda": "FINAL INESPERADO"}
-        ]
+        print(f"[AVISO GEMINI FALHA]: {e}")
+
+    # Fallback seguro para garantir que a renderização nunca pare
+    print("[GEMINI] Usando cortes estratégicos calculados...")
+    return [
+        {"start": 30, "title": "MOMENTO BIZARRO", "legenda": "VOCÊ NÃO VAI ACREDITAR"},
+        {"start": 75, "title": "SURREAL DEMAIS", "legenda": "OLHA O QUE ACONTECEU"},
+        {"start": 130, "title": "FINAL INESPERADO", "legenda": "INACREDITÁVEL"}
+    ]
 
 # ---------------------------------------------------------
-# 2. OBTER STREAM DIRETO VIA COBALT (SEU RAILWAY)
+# 2. OBTENÇÃO DO VÍDEO VIA COBALT (SEU RAILWAY)
 # ---------------------------------------------------------
 def obter_link_direto_cobalt(youtube_url):
-    """Pede o link do arquivo de vídeo limpo para o seu Cobalt no Railway."""
-    try:
-        payload = {
-            "url": youtube_url,
-            "videoQuality": "720",
-            "filenameStyle": "classic"
-        }
-        headers = {"Accept": "application/json", "Content-Type": "application/json"}
-        res = requests.post(COBALT_API, json=payload, headers=headers, timeout=45)
-        dados = res.json()
-        return dados.get("url")
-    except Exception as e:
-        print(f"[ERRO COBALT]: {e}")
-        return None
+    tentativas = [
+        f"{COBALT_URL.rstrip('/')}/",
+        f"{COBALT_URL.rstrip('/')}/api/json",
+        "https://api.cobalt.tools/"
+    ]
+    
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "url": youtube_url
+    }
+
+    for ep in tentativas:
+        try:
+            print(f"[COBALT] Consultando rota: {ep}")
+            res = requests.post(ep, json=payload, headers=headers, allow_redirects=True, timeout=30)
+            if res.status_code == 200:
+                dados = res.json()
+                stream = dados.get("url")
+                if stream:
+                    print(f"[COBALT SUCESSO] Link do vídeo obtido via {ep}")
+                    return stream
+            else:
+                print(f"[COBALT STATUS {res.status_code}]: {res.text[:200]}")
+        except Exception as e:
+            print(f"[COBALT ERRO EM {ep}]: {e}")
+            continue
+
+    return None
 
 # ---------------------------------------------------------
 # 3. EDIÇÃO E RENDERIZAÇÃO NO CLOUDINARY
@@ -113,12 +137,11 @@ def renderizar_corte(dados):
     i, corte, stream_url = dados
     try:
         start_sec = int(corte.get("start", 30))
-        titulo = corte.get("title", "DESTAQUE").upper().replace(",", "").replace("/", "")
-        legenda = corte.get("legenda", "CONFIRA").upper().replace(",", "").replace("/", "")
+        titulo = corte.get("title", "DESTAQUE").upper().replace(",", "").replace("/", "").replace(":", "")
+        legenda = corte.get("legenda", "CONFIRA").upper().replace(",", "").replace("/", "").replace(":", "")
         
-        print(f"[Corte {i}] Enviando instruções para Cloudinary...")
+        print(f"[Corte {i}] Recortando aos {start_sec}s e renderizando 9:16 no Cloudinary...")
         
-        # O Cloudinary faz o recorte no tempo exato, foca no rosto e adiciona as legendas
         transformations = [
             {"start_offset": start_sec, "duration": 30},
             {"width": 1080, "height": 1920, "crop": "fill", "gravity": "face"},
@@ -145,6 +168,7 @@ def renderizar_corte(dados):
         )
         
         url_final = upload.get("secure_url")
+        print(f"[Corte {i}] Concluído com sucesso: {url_final}")
         
         with file_lock:
             try:
@@ -178,14 +202,13 @@ def run():
     log("1/4. [Gemini IA] Analisando o contexto do vídeo...")
     cortes = analisar_com_gemini(youtube_url)
     
-    log("2/4. [Cobalt Railway] Extraindo link de alta velocidade sem bloqueios...")
+    log("2/4. [Cobalt Railway] Extraindo fluxo de mídia sem bloqueios...")
     stream_url = obter_link_direto_cobalt(youtube_url)
     
     if not stream_url:
         log("ERRO: Não foi possível obter o link do vídeo pelo Cobalt.")
         return
 
-    # Registra estado inicial dos clipes na interface
     lista_inicial = [{"id": i, "title": c["title"], "url": "", "status": "renderizando"} for i, c in enumerate(cortes)]
     salvar_clipes(lista_inicial)
     
