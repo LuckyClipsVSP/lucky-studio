@@ -1,36 +1,60 @@
-from flask import Flask, render_template, request, jsonify
-import subprocess, os, json, time
+import os
+import time
+import json
+import subprocess
+from flask import Flask, request, jsonify
 
-app = Flask(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CLIPS_FILE = os.path.join(BASE_DIR, "clips_prontos.json")
 STATUS_FILE = os.path.join(BASE_DIR, "status.txt")
+INDEX_PATH = os.path.join(BASE_DIR, "index.html")
+
+app = Flask(__name__)
 
 @app.route('/')
-def index(): return render_template('index.html')
+def index():
+    if os.path.exists(INDEX_PATH):
+        with open(INDEX_PATH, 'r', encoding='utf-8') as f:
+            return f.read()
+    return "Arquivo index.html não foi encontrado no servidor.", 404
 
 @app.route('/generate', methods=['POST'])
 def generate():
-    link = request.json.get('link')
-    with open(CLIPS_FILE, "w", encoding="utf-8") as f: json.dump([], f)
-    with open(STATUS_FILE, "w", encoding="utf-8") as f: 
-        f.write(f"Iniciando análise de clips de 30s...|{int(time.time())}")
+    data = request.get_json() or {}
+    link = data.get('link')
+    if not link:
+        return jsonify({"error": "Link ausente"}), 400
+
+    with open(CLIPS_FILE, "w", encoding="utf-8") as f:
+        json.dump([], f)
     
+    with open(STATUS_FILE, "w", encoding="utf-8") as f:
+        f.write(f"Iniciando análise de clips de 30s...|{int(time.time())}")
+
     subprocess.Popen(['python3', os.path.join(BASE_DIR, 'pipeline.py'), link])
     return jsonify({"status": "Processo iniciado para clips de 30 segundos"})
 
 @app.route('/get_status')
 def get_status():
     try:
-        with open(STATUS_FILE, "r") as f: raw = f.read().split('|')
-        msg = raw[0]
-        start_time = raw[1] if len(raw) > 1 else int(time.time())
-        
+        msg = "Aguardando..."
+        start_time = int(time.time())
+        if os.path.exists(STATUS_FILE):
+            with open(STATUS_FILE, "r", encoding="utf-8") as f:
+                raw = f.read().split('|')
+                msg = raw[0]
+                if len(raw) > 1:
+                    start_time = int(raw[1])
+
         clips = []
         if os.path.exists(CLIPS_FILE):
-            with open(CLIPS_FILE, "r") as f: clips = json.load(f)
+            with open(CLIPS_FILE, "r", encoding="utf-8") as f:
+                clips = json.load(f)
+
         return jsonify({"status": msg, "start_time": start_time, "clips": clips})
-    except: return jsonify({"status": "Aguardando...", "clips": []})
+    except Exception as e:
+        return jsonify({"status": f"Processando... ({str(e)})", "clips": []})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001)
+    port = int(os.environ.get('PORT', 5001))
+    app.run(host='0.0.0.0', port=port)
