@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <title>Lucky Studio | Viral AI</title>
+    <style>
+        :root { --main: #00d4ff; --bg: #05060a; --surface: rgba(17, 20, 32, 0.9); }
+        body { 
+            background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; margin: 0; 
+            overflow-y: auto; min-height: 100vh;
+        }
+        .wrapper { width: 100%; max-width: 1200px; margin: 0 auto; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
+        
+        .header { text-align: center; transition: 0.5s; }
+        .logo { font-family: 'Montserrat', sans-serif; font-size: 42px; letter-spacing: -2px; }
+        .logo span { color: var(--main); }
+
+        .search-area { background: var(--surface); border: 1px solid rgba(255,255,255,0.1); padding: 10px; border-radius: 20px; display: flex; width: 100%; max-width: 600px; margin: 30px 0; }
+        input { flex: 1; background: transparent; border: none; padding: 15px; color: #fff; outline: none; }
+        button { background: var(--main); color: #000; border: none; padding: 0 30px; border-radius: 15px; font-weight: 900; cursor: pointer; }
+
+        .progress-box { width: 100%; max-width: 600px; display: none; margin-bottom: 40px; }
+        .bar-bg { background: #111; height: 10px; border-radius: 10px; overflow: hidden; margin-top: 10px; }
+        .bar-fill { height: 100%; width: 0%; background: var(--main); box-shadow: 0 0 15px var(--main); transition: 0.5s; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 25px; width: 100%; }
+        .card { background: #111420; border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; overflow: hidden; }
+        .video-box { width: 100%; aspect-ratio: 9/16; background: #000; position: relative; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        
+        .loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); }
+        .ring { width: 40px; height: 40px; border: 3px solid #222; border-top: 3px solid var(--main); border-radius: 50%; animation: spin 1s infinite linear; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .card-body { padding: 15px; font-size: 14px; font-weight: bold; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="header" id="header">
+            <div class="logo">LUCKY<span>STUDIO</span></div>
+        </div>
+
+        <div class="search-area">
+            <input type="text" id="link" placeholder="Link do YouTube...">
+            <button onclick="ignite()">GERAR VÍDEOS DE 30 SEGUNDOS</button>
+        </div>
+
+        <div class="progress-box" id="pBox">
+            <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--main)">
+                <span id="statusLabel">Analisando...</span>
+                <span id="timer">00:00</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill" id="bar"></div></div>
+        </div>
+
+        <div class="grid" id="grid"></div>
+    </div>
+
+    <script>
+        async function ignite() {
+            const link = document.getElementById('link').value;
+            if(!link) return;
+            document.getElementById('pBox').style.display = 'block';
+            document.getElementById('grid').innerHTML = '';
+            await fetch('/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({link})});
+            setInterval(refresh, 2000);
+        }
+
+        async function refresh() {
+            const res = await fetch('/get_status');
+            const data = await res.json();
+            document.getElementById('statusLabel').innerText = data.status;
+            let p = 10;
+            if(data.status.includes("3/4")) p = 60;
+            if(data.status.includes("4/4")) p = 100;
+            document.getElementById('bar').style.width = p + '%';
+            
+            const diff = Math.floor(Date.now()/1000) - data.start_time;
+            document.getElementById('timer').innerText = Math.floor(diff/60).toString().padStart(2,'0') + ":" + (diff%60).toString().padStart(2,'0');
+
+            if(data.clips.length > 0) {
+                document.getElementById('grid').innerHTML = data.clips.map(clip => `
+                    <div class="card">
+                        <div class="video-box">
+                            ${clip.status === 'pronto' ? `<video controls src="${clip.url}"></video>` : 
+                            `<div class="loading"><div class="ring"></div><p style="font-size:10px;margin-top:10px">CRIANDO 30s...</p></div>`}
+                        </div>
+                        <div class="card-body">${clip.title}</div>
+                    </div>
+                `).join('');
+            }
+        }
+    </script>
+</body>
+</html>
