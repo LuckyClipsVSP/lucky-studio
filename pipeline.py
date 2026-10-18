@@ -51,73 +51,64 @@ def save_state(clips):
             print(f"[ERRO SAVE_STATE]: {e}")
 
 # -----------------------------------------------------------------------------
-# EXTRAÇÃO DE MÍDIA COMPATÍVEL COM NUVEM (COM BYPASS DE COOKIES)
+# EXTRAÇÃO DE MÍDIA VIA PROXY (BURLA O BLOQUEIO DE IP DO YOUTUBE)
 # -----------------------------------------------------------------------------
 def baixar_trecho_local(youtube_url, start_sec, duracao):
     temp_file = f"/tmp/corte_{start_sec}_{int(time.time())}.mp4"
     if os.path.exists(temp_file):
         os.remove(temp_file)
 
-    end_sec = start_sec + duracao
-    h1, m1, s1 = start_sec // 3600, (start_sec % 3600) // 60, start_sec % 60
-    h2, m2, s2 = end_sec // 3600, (end_sec % 3600) // 60, end_sec % 60
-    section = f"*{h1:02d}:{m1:02d}:{s1:02d}-{h2:02d}:{m2:02d}:{s2:02d}"
-
-    # Copia o cookies.txt para a pasta /tmp/ para evitar erro de Read-Only
-    writable_cookies = f"/tmp/cookies_{int(time.time())}.txt"
-    secret_cookies = "/etc/secrets/cookies.txt"
-    local_cookies = os.path.join(BASE_DIR, "cookies.txt")
-
-    cookies_path = None
-    if os.path.exists(secret_cookies):
-        try:
-            shutil.copy(secret_cookies, writable_cookies)
-            cookies_path = writable_cookies
-        except Exception as e:
-            print(f"[AVISO COPY COOKIES]: {e}")
-    elif os.path.exists(local_cookies):
-        try:
-            shutil.copy(local_cookies, writable_cookies)
-            cookies_path = writable_cookies
-        except Exception as e:
-            print(f"[AVISO COPY COOKIES]: {e}")
-
-    clientes_tentativa = [
-        "youtube:player_client=android_creator,android",
-        "youtube:player_client=tv",
-        "youtube:player_client=web_creator"
+    # 1. Obter link de streaming via API do Cobalt (Sem necessidade de cookies)
+    cobalt_instances = [
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt-api.kwi.im/api/json"
     ]
-
-    for extractor_arg in clientes_tentativa:
-        cmd = [
-            "yt-dlp",
-            "--extractor-args", extractor_arg,
-            "--download-sections", section,
-            "--force-keyframes-at-cuts",
-            "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
-            "--merge-output-format", "mp4",
-            "--no-check-certificates",
-            "-o", temp_file,
-            youtube_url
-        ]
-
-        if cookies_path and os.path.exists(cookies_path):
-            cmd.extend(["--cookies", cookies_path])
-
+    
+    video_url_direto = None
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    
+    for instance in cobalt_instances:
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-            if res.returncode == 0 and os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
-                print(f"[YT-DLP SUCESSO] Recortado com {extractor_arg}")
-                if cookies_path and os.path.exists(cookies_path):
-                    os.remove(cookies_path)
-                return temp_file
-            else:
-                print(f"[YT-DLP AVISO ({extractor_arg})]: {res.stderr[-200:]}")
+            payload = {"url": youtube_url, "vQuality": "720", "isAudioOnly": False}
+            resp = requests.post(instance, json=payload, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                video_url_direto = data.get("url")
+                if video_url_direto:
+                    print(f"[PROXY SUCESSO] Link obtido com sucesso!")
+                    break
         except Exception as e:
-            print(f"[YT-DLP EXCEÇÃO]: {e}")
+            print(f"[PROXY AVISO {instance}]: {e}")
 
-    if cookies_path and os.path.exists(cookies_path):
-        os.remove(cookies_path)
+    # 2. Se obtiver o link direto, recorta com o FFmpeg instantaneamente
+    if video_url_direto:
+        h, m, s = start_sec // 3600, (start_sec % 3600) // 60, start_sec % 60
+        timestamp = f"{h:02d}:{m:02d}:{s:02d}"
+        cmd_ffmpeg = [
+            "ffmpeg", "-y", "-ss", timestamp, "-i", video_url_direto,
+            "-t", str(duracao), "-c", "copy", temp_file
+        ]
+        try:
+            subprocess.run(cmd_ffmpeg, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+            if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
+                return temp_file
+        except Exception as e:
+            print(f"[FFMPEG ERRO]: {e}")
+
+    # 3. Fallback de contingência caso o proxy falhe
+    cmd_ytdlp = [
+        "yt-dlp",
+        "--extractor-args", "youtube:player_client=ios,android",
+        "--download-sections", f"*{start_sec}-{start_sec + duracao}",
+        "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        "--no-check-certificates",
+        "-o", temp_file,
+        youtube_url
+    ]
+    try:
+        subprocess.run(cmd_ytdlp, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180)
+    except Exception as e:
+        print(f"[YT-DLP ERRO FALLBACK]: {e}")
 
     return temp_file if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0 else None
 
@@ -134,7 +125,7 @@ def renderizar_cloudinary(dados):
         temp_video_path = baixar_trecho_local(video_url, start, duracao)
 
         if not temp_video_path:
-            _marcar_erro(i, "Falha ao recortar vídeo com yt-dlp")
+            _marcar_erro(i, "Bloqueio do YouTube ao extrair vídeo")
             return
 
         print(f"[Corte {i}] Enviando para o Cloudinary...")
@@ -213,7 +204,7 @@ def _marcar_erro(index, erro_msg):
             print(f"[ERRO ATUALIZAÇÃO ERRO]: {e}")
 
 # -----------------------------------------------------------------------------
-# CHAMADAS DE INTELIGÊNCIA ARTIFICIAL (GROQ / NUVEM)
+# CHAMADAS DE INTELIGÊNCIA ARTIFICIAL (GROQ)
 # -----------------------------------------------------------------------------
 def chamar_ia(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -254,56 +245,4 @@ def run():
       {{"start": 30, "duration": 30}},
       {{"start": 90, "duration": 30}},
       {{"start": 150, "duration": 30}}
-    ]
-    """
-
-    res_ia = chamar_ia(prompt_gemini)
-    try:
-        cortes_brutos = json.loads(res_ia[res_ia.find("["):res_ia.rfind("]")+1])
-    except Exception:
-        cortes_brutos = [
-            {"start": 30, "duration": 30},
-            {"start": 90, "duration": 30},
-            {"start": 150, "duration": 30}
-        ]
-
-    log("2/4. [Groq Engine] Sintetizando títulos virais e legendas...")
-    cortes_enriquecidos = []
-
-    for c in cortes_brutos:
-        start = int(c.get('start', 30))
-        duration = int(c.get('duration', 30))
-
-        prompt_copy = f"""
-        Para um Short viral do segundo {start} ao {start + duration}, crie:
-        1. Título curto marcante.
-        2. Legenda irônica e chamativa.
-        Responda APENAS em JSON puro:
-        {{"title": "MOMENTO INCRÍVEL", "legenda": "VOCÊ NÃO VAI ACREDITAR"}}
-        """
-
-        res_copy = chamar_ia(prompt_copy)
-        try:
-            dados_ia = json.loads(res_copy[res_copy.find("{"):res_copy.rfind("}")+1])
-        except Exception:
-            dados_ia = {"title": "MOMENTO VIRAL", "legenda": "OLHA ISSO AQUI"}
-
-        cortes_enriquecidos.append({
-            "start": start,
-            "duration": duration,
-            "title": dados_ia.get("title", "Corte Viral"),
-            "legenda": dados_ia.get("legenda", "Veja isso!")
-        })
-
-    clips_status = [{"id": i, "title": c['title'], "url": "", "status": "renderizando"} for i, c in enumerate(cortes_enriquecidos)]
-    save_state(clips_status)
-
-    log("3/4. Executando edição 9:16 no Cloudinary...")
-
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        list(ex.map(renderizar_cloudinary, [(i, c, video_url) for i, c in enumerate(cortes_enriquecidos)]))
-
-    log("4/4. Concluído!")
-
-if __name__ == "__main__":
-    run()
+    
