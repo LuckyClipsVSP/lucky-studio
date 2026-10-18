@@ -16,4 +16,4 @@ COPY . .
 ENV PORT=5001
 EXPOSE 5001
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers 2 --timeout 120 server:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers 2 --timeout 180 server:app"]
