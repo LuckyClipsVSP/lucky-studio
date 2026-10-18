@@ -237,12 +237,48 @@ def run():
     video_url = sys.argv[1]
 
     log("1/4. [Protocolo /Watch] Analisando contexto...")
-    prompt_gemini = f"""
-    Analise o vídeo do YouTube: {video_url}.
-    Identifique os 3 melhores trechos de 30 segundos.
-    Responda APENAS em JSON puro:
-    [
-      {{"start": 30, "duration": 30}},
-      {{"start": 90, "duration": 30}},
-      {{"start": 150, "duration": 30}}
     
+    # Aspas simples e sem quebras de linha complexas para evitar erro
+    prompt_gemini = "Analise o video do YouTube: " + video_url + ". Identifique os 3 melhores trechos de 30 segundos. Responda APENAS em JSON puro: [{\"start\": 30, \"duration\": 30}, {\"start\": 90, \"duration\": 30}, {\"start\": 150, \"duration\": 30}]"
+
+    res_ia = chamar_ia(prompt_gemini)
+    try:
+        cortes_brutos = json.loads(res_ia[res_ia.find("["):res_ia.rfind("]")+1])
+    except Exception:
+        cortes_brutos = [
+            {"start": 30, "duration": 30},
+            {"start": 90, "duration": 30},
+            {"start": 150, "duration": 30}
+        ]
+
+    log("2/4. [Groq Engine] Sintetizando títulos virais e legendas...")
+    cortes_enriquecidos = []
+
+    for c in cortes_brutos:
+        start = int(c.get('start', 30))
+        duration = int(c.get('duration', 30))
+
+        prompt_copy = "Para um Short viral do segundo " + str(start) + " ao " + str(start + duration) + ", crie: 1. Titulo curto marcante. 2. Legenda ironica. Responda APENAS em JSON puro: {\"title\": \"MOMENTO INCRIVEL\", \"legenda\": \"VOCE NAO VAI ACREDITAR\"}"
+
+        res_copy = chamar_ia(prompt_copy)
+        try:
+            dados_ia = json.loads(res_copy[res_copy.find("{"):res_copy.rfind("}")+1])
+        except Exception:
+            dados_ia = {"title": "MOMENTO VIRAL", "legenda": "OLHA ISSO AQUI"}
+
+        cortes_enriquecidos.append({
+            "start": start,
+            "duration": duration,
+            "title": dados_ia.get("title", "Corte Viral"),
+            "legenda": dados_ia.get("legenda", "Veja isso!")
+        })
+
+    clips_status = [{"id": i, "title": c['title'], "url": "", "status": "renderizando"} for i, c in enumerate(cortes_enriquecidos)]
+    save_state(clips_status)
+
+    log("3/4. Executando edição 9:16 no Cloudinary...")
+
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        list(ex.map(renderizar_cloudinary, [(i, c, video_url) for i, c in enumerate(cortes_enriquecidos)]))
+
+    log("4/4. Concluído!")
