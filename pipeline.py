@@ -62,37 +62,36 @@ def baixar_trecho_local(youtube_url, start_sec, duracao):
     h2, m2, s2 = end_sec // 3600, (end_sec % 3600) // 60, end_sec % 60
     section = f"*{h1:02d}:{m1:02d}:{s1:02d}-{h2:02d}:{m2:02d}:{s2:02d}"
 
-    # Adicionada camuflagem de Android para burlar bloqueio de IP de nuvem
-    cmd = [
-        "yt-dlp",
-        "--extractor-args", "youtube:player_client=android,web",
-        "--download-sections", section,
-        "--force-keyframes-at-cuts",
-        "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
-        "--no-check-certificates",
-        "-o", temp_file,
-        youtube_url
+    # Lista de estratégias de camuflagem (iOS, MWeb, TV) que não exigem login/cookies
+    estrategias_clientes = [
+        "youtube:player_client=ios,mweb",
+        "youtube:player_client=tv_embedded",
+        "youtube:player_client=mweb"
     ]
 
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-        if res.returncode != 0:
-            print(f"[LOG YT-DLP ERRO STDERR]: {res.stderr[-300:]}")
-            # Tentativa 2 de contingência caso a primeira falhe
-            cmd_fallback = [
-                "yt-dlp",
-                "--extractor-args", "youtube:player_client=android",
-                "--download-sections", section,
-                "-f", "best",
-                "-o", temp_file,
-                youtube_url
-            ]
-            subprocess.run(cmd_fallback, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180)
-    except Exception as e:
-        print(f"[ERRO YT-DLP EXCEÇÃO]: {e}")
-        return None
+    for cliente in estrategias_clientes:
+        cmd = [
+            "yt-dlp",
+            "--extractor-args", cliente,
+            "--download-sections", section,
+            "--force-keyframes-at-cuts",
+            "-f", "b/best",
+            "--no-check-certificates",
+            "-o", temp_file,
+            youtube_url
+        ]
+        
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if res.returncode == 0 and os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
+                print(f"[YT-DLP SUCESSO] Recortado com cliente: {cliente}")
+                return temp_file
+            else:
+                print(f"[YT-DLP TENTATIVA FALHOU ({cliente})]: {res.stderr[-200:]}")
+        except Exception as e:
+            print(f"[YT-DLP ERRO CLIENTE ({cliente})]: {e}")
 
-    return temp_file if os.path.exists(temp_file) else None
+    return temp_file if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0 else None
 
 # -----------------------------------------------------------------------------
 # RENDERIZAÇÃO CLOUDINARY (ESTILO 9:16 + LEGENDAS)
