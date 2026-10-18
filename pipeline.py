@@ -1,23 +1,22 @@
-import os, sys, json, time, requests, threading
-import cloudinary, cloudinary.uploader
+import os, requests, time, json
+from flask import jsonify
 
-def processar_video_tarefa(link):
-    # 1. Baixa usando o Cobalt (API pública que o YouTube não bloqueia)
+def processar_viral(link):
+    # Usaremos a API da Vidoza ou Cobalt via requests simples
+    # Isso evita usar yt-dlp dentro do seu servidor
     try:
-        r = requests.post("https://api.cobalt.tools/api/json", 
-            json={"url": link, "vQuality": "720"}, 
-            headers={"Accept": "application/json", "Content-Type": "application/json"})
-        video_url = r.json().get("url")
-        if not video_url: return
+        # 1. Solicita o vídeo ao Cobalt (sem baixar no seu servidor)
+        resp = requests.post("https://api.cobalt.tools/api/json", 
+            json={"url": link, "vQuality": "720"},
+            headers={"Accept": "application/json", "Content-Type": "application/json"}, timeout=30)
+        video_url = resp.json().get("url")
         
-        # 2. Upload direto pro Cloudinary (o Cloudinary baixa o vídeo da URL pra você)
+        if not video_url: return "Erro no Cobalt"
+        
+        # 2. Envia para o Cloudinary apenas a URL (o Cloudinary baixa pra você na nuvem dele)
+        import cloudinary.uploader
         upload = cloudinary.uploader.upload_large(video_url, resource_type="video")
-        print("Upload concluído com sucesso!")
         
+        return upload['secure_url']
     except Exception as e:
-        print(f"Erro no processamento: {e}")
-
-def run_background(link):
-    # Isso roda em uma "thread" separada, não trava o site!
-    thread = threading.Thread(target=processar_video_tarefa, args=(link,))
-    thread.start()
+        return str(e)
