@@ -1,56 +1,42 @@
-import os, sys, json, time, requests, subprocess, threading, logging
+import os, json, time, requests, subprocess, threading
 from concurrent.futures import ThreadPoolExecutor
 import cloudinary, cloudinary.uploader, cloudinary.utils
-from tenacity import retry, stop_after_attempt, wait_exponential # Instale: pip install tenacity
 
-# Configuração de Logs Profissional
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("LuckyStudio")
+CLIPS_FILE = "clips_prontos.json"
 
-# Configurações com proteção de nulidade
-CLOUDINARY_CONFIG = {
-    "cloud_name": os.environ.get("CLOUDINARY_CLOUD_NAME"),
-    "api_key": os.environ.get("CLOUDINARY_API_KEY"),
-    "api_secret": os.environ.get("CLOUDINARY_API_SECRET")
-}
-cloudinary.config(**CLOUDINARY_CONFIG)
-
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def baixar_e_cortar_com_retry(video_url, start, duration):
-    """Método robusto: tenta 3 vezes com backoff exponencial."""
-    temp_file = f"/tmp/cut_{int(time.time())}.mp4"
-    # Usamos FFmpeg com o proxy Cobalt para evitar bloqueios de IP
-    proxy_url = "https://api.cobalt.tools/api/json"
-    resp = requests.post(proxy_url, json={"url": video_url, "vQuality": "720"}, timeout=30).json()
-    
-    if "url" not in resp: raise Exception("Falha ao obter URL do Proxy")
-    
-    # FFmpeg: Recorte preciso na nuvem
-    cmd = ["ffmpeg", "-y", "-ss", str(start), "-i", resp["url"], "-t", str(duration), "-c", "copy", temp_file]
-    subprocess.run(cmd, check=True, capture_output=True)
-    return temp_file
-
-def processar_corte(dados):
-    i, corte, video_url = dados
+def processar_video(i, start, duration, video_url):
+    temp_file = f"/tmp/final_{i}.mp4"
+    # Chamada única ao serviço Cobalt (Proxy de alta confiança)
+    # Se o Cobalt não conseguir, nenhum downloader gratuito consegue no Render
     try:
-        path = baixar_e_cortar_com_retry(video_url, corte['start'], corte['duration'])
+        req = requests.post("https://api.cobalt.tools/api/json", json={
+            "url": video_url, "vQuality": "720", "isAudioOnly": False
+        }, headers={"Accept": "application/json", "Content-Type": "application/json"}, timeout=60).json()
         
-        # Upload para Cloudinary com tratamento de falhas
-        upload = cloudinary.uploader.upload_large(path, resource_type="video")
-        os.remove(path)
+        url_direta = req.get("url")
+        if not url_direta: return None
+
+        # Recorte via FFmpeg (Rápido e sem bloqueios de JS)
+        timestamp = f"{start//3600:02d}:{(start%3600)//60:02d}:{start%60:02d}"
+        subprocess.run(["ffmpeg", "-y", "-ss", timestamp, "-i", url_direta, "-t", str(duration), "-c", "copy", temp_file], check=True)
         
-        url, _ = cloudinary.utils.cloudinary_url(upload['public_id'], resource_type="video", format="mp4", transformation=[
-            {"width": 1080, "height": 1920, "crop": "fill", "gravity": "face"},
-            {"overlay": {"font_family": "Arial", "font_size": 42, "text": corte['title'].upper()}, "color": "#00D4FF", "gravity": "north", "y": 140}
+        # Upload Cloudinary
+        res = cloudinary.uploader.upload_large(temp_file, resource_type="video")
+        url, _ = cloudinary.utils.cloudinary_url(res['public_id'], resource_type="video", format="mp4", transformation=[
+            {"width": 1080, "height": 1920, "crop": "fill", "gravity": "face"}
         ])
-        return {"id": i, "url": url, "status": "pronto"}
+        return url
     except Exception as e:
-        logger.error(f"Falha crítica no corte {i}: {e}")
-        return {"id": i, "status": "erro", "erro": str(e)}
+        print(f"Erro no corte {i}: {e}")
+        return None
 
 def run_wrapper(link):
-    # Lógica centralizada
-    clips = [{"start": 30, "duration": 30, "title": "Corte Viral"}] # Exemplo
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        resultados = list(ex.map(processar_corte, [(i, c, link) for i, c in enumerate(clips)]))
-    # Salvar resultados...
+    # Simulação da etapa de IA (substitua pelos seus prompts)
+    clips = [{"start": 30, "duration": 30, "title": "Corte 1"}, {"start": 90, "duration": 30, "title": "Corte 2"}]
+    
+    results = []
+    for i, c in enumerate(clips):
+        url = processar_video(i, c['start'], c['duration'], link)
+        results.append({"id": i, "title": c['title'], "url": url or "", "status": "pronto" if url else "erro"})
+    
+    with open(CLIPS_FILE, "w") as f: json.dump(results, f)
