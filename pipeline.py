@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import shutil
 import requests
 import subprocess
 import threading
@@ -50,7 +51,7 @@ def save_state(clips):
             print(f"[ERRO SAVE_STATE]: {e}")
 
 # -----------------------------------------------------------------------------
-# EXTRAÇÃO DE MÍDIA COMPATÍVEL COM NUVEM
+# EXTRAÇÃO DE MÍDIA COMPATÍVEL COM NUVEM (COM BYPASS DE COOKIES)
 # -----------------------------------------------------------------------------
 def baixar_trecho_local(youtube_url, start_sec, duracao):
     temp_file = f"/tmp/corte_{start_sec}_{int(time.time())}.mp4"
@@ -62,11 +63,25 @@ def baixar_trecho_local(youtube_url, start_sec, duracao):
     h2, m2, s2 = end_sec // 3600, (end_sec % 3600) // 60, end_sec % 60
     section = f"*{h1:02d}:{m1:02d}:{s1:02d}-{h2:02d}:{m2:02d}:{s2:02d}"
 
-    cookies_path = "/etc/secrets/cookies.txt"
-    if not os.path.exists(cookies_path):
-        cookies_path = os.path.join(BASE_DIR, "cookies.txt")
+    # Copia o cookies.txt para a pasta /tmp/ para evitar erro de Read-Only
+    writable_cookies = f"/tmp/cookies_{int(time.time())}.txt"
+    secret_cookies = "/etc/secrets/cookies.txt"
+    local_cookies = os.path.join(BASE_DIR, "cookies.txt")
 
-    # Clientes que não exigem o desafio JS "The page needs to be reloaded"
+    cookies_path = None
+    if os.path.exists(secret_cookies):
+        try:
+            shutil.copy(secret_cookies, writable_cookies)
+            cookies_path = writable_cookies
+        except Exception as e:
+            print(f"[AVISO COPY COOKIES]: {e}")
+    elif os.path.exists(local_cookies):
+        try:
+            shutil.copy(local_cookies, writable_cookies)
+            cookies_path = writable_cookies
+        except Exception as e:
+            print(f"[AVISO COPY COOKIES]: {e}")
+
     clientes_tentativa = [
         "youtube:player_client=android_creator,android",
         "youtube:player_client=tv",
@@ -86,18 +101,23 @@ def baixar_trecho_local(youtube_url, start_sec, duracao):
             youtube_url
         ]
 
-        if os.path.exists(cookies_path):
+        if cookies_path and os.path.exists(cookies_path):
             cmd.extend(["--cookies", cookies_path])
 
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
             if res.returncode == 0 and os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
                 print(f"[YT-DLP SUCESSO] Recortado com {extractor_arg}")
+                if cookies_path and os.path.exists(cookies_path):
+                    os.remove(cookies_path)
                 return temp_file
             else:
                 print(f"[YT-DLP AVISO ({extractor_arg})]: {res.stderr[-200:]}")
         except Exception as e:
             print(f"[YT-DLP EXCEÇÃO]: {e}")
+
+    if cookies_path and os.path.exists(cookies_path):
+        os.remove(cookies_path)
 
     return temp_file if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0 else None
 
@@ -193,7 +213,7 @@ def _marcar_erro(index, erro_msg):
             print(f"[ERRO ATUALIZAÇÃO ERRO]: {e}")
 
 # -----------------------------------------------------------------------------
-# CHAMADAS DE INTELIGÊNCIA ARTIFICIAL
+# CHAMADAS DE INTELIGÊNCIA ARTIFICIAL (GROQ / NUVEM)
 # -----------------------------------------------------------------------------
 def chamar_ia(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
