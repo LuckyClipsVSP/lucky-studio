@@ -2,7 +2,7 @@ import os
 import time
 import json
 import subprocess
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CLIPS_FILE = os.path.join(BASE_DIR, "clips_prontos.json")
@@ -14,9 +14,8 @@ app = Flask(__name__)
 @app.route('/')
 def index():
     if os.path.exists(INDEX_PATH):
-        with open(INDEX_PATH, 'r', encoding='utf-8') as f:
-            return f.read()
-    return "Arquivo index.html não foi encontrado no servidor.", 404
+        return send_file(INDEX_PATH)
+    return "Arquivo index.html nao encontrado na raiz do projeto.", 404
 
 @app.route('/generate', methods=['POST'])
 def generate():
