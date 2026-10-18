@@ -62,34 +62,42 @@ def baixar_trecho_local(youtube_url, start_sec, duracao):
     h2, m2, s2 = end_sec // 3600, (end_sec % 3600) // 60, end_sec % 60
     section = f"*{h1:02d}:{m1:02d}:{s1:02d}-{h2:02d}:{m2:02d}:{s2:02d}"
 
-    cookies_path = os.path.join(BASE_DIR, "cookies.txt")
+    cookies_path = "/etc/secrets/cookies.txt"
     if not os.path.exists(cookies_path):
-        cookies_path = "/etc/secrets/cookies.txt"
+        cookies_path = os.path.join(BASE_DIR, "cookies.txt")
 
-    cmd = [
-        "yt-dlp",
-        "--download-sections", section,
-        "--force-keyframes-at-cuts",
-        "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
-        "--merge-output-format", "mp4",
-        "--no-check-certificates",
-        "-o", temp_file,
-        youtube_url
+    # Clientes que não exigem o desafio JS "The page needs to be reloaded"
+    clientes_tentativa = [
+        "youtube:player_client=android_creator,android",
+        "youtube:player_client=tv",
+        "youtube:player_client=web_creator"
     ]
 
-    # Se o arquivo de cookies existir, o robô se apresenta como usuário comum
-    if os.path.exists(cookies_path):
-        cmd.extend(["--cookies", cookies_path])
+    for extractor_arg in clientes_tentativa:
+        cmd = [
+            "yt-dlp",
+            "--extractor-args", extractor_arg,
+            "--download-sections", section,
+            "--force-keyframes-at-cuts",
+            "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+            "--merge-output-format", "mp4",
+            "--no-check-certificates",
+            "-o", temp_file,
+            youtube_url
+        ]
 
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-        if res.returncode == 0 and os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
-            print(f"[YT-DLP SUCESSO] Vídeo recortado sem bloqueios!")
-            return temp_file
-        else:
-            print(f"[YT-DLP ERRO]: {res.stderr[-300:]}")
-    except Exception as e:
-        print(f"[YT-DLP EXCEÇÃO]: {e}")
+        if os.path.exists(cookies_path):
+            cmd.extend(["--cookies", cookies_path])
+
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            if res.returncode == 0 and os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
+                print(f"[YT-DLP SUCESSO] Recortado com {extractor_arg}")
+                return temp_file
+            else:
+                print(f"[YT-DLP AVISO ({extractor_arg})]: {res.stderr[-200:]}")
+        except Exception as e:
+            print(f"[YT-DLP EXCEÇÃO]: {e}")
 
     return temp_file if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0 else None
 
