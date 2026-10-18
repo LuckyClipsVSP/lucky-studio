@@ -24,12 +24,14 @@ def generate():
     if not link:
         return jsonify({"error": "Link ausente"}), 400
 
+    # Reseta o estado dos arquivos temporarios
     with open(CLIPS_FILE, "w", encoding="utf-8") as f:
         json.dump([], f)
     
     with open(STATUS_FILE, "w", encoding="utf-8") as f:
-        f.write(f"Iniciando análise de clips de 30s...|{int(time.time())}")
+        f.write(f"1/4. [Protocolo /Watch] Analisando contexto...|{int(time.time())}")
 
+    # Executa o pipeline de fundo sem travar o servidor Flask
     subprocess.Popen(['python3', os.path.join(BASE_DIR, 'pipeline.py'), link])
     return jsonify({"status": "Processo iniciado para clips de 30 segundos"})
 
