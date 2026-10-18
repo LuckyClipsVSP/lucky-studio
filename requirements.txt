@@ -4,3 +4,4 @@ yt-dlp>=2024.08.06
 cloudinary>=1.41.0
 gunicorn==22.0.0
 pycryptodomex
+tenacity==9.0.0
