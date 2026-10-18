@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <title>Lucky Studio | Viral AI</title>
     <style>
@@ -10,15 +11,16 @@
             background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; margin: 0; 
             overflow-y: auto; min-height: 100vh;
         }
-        .wrapper { width: 100%; max-width: 1200px; margin: 0 auto; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
+        .wrapper { width: 100%; max-width: 1200px; margin: 0 auto; padding: 40px 20px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; }
         
-        .header { text-align: center; transition: 0.5s; }
+        .header { text-align: center; }
         .logo { font-family: 'Montserrat', sans-serif; font-size: 42px; letter-spacing: -2px; }
         .logo span { color: var(--main); }
 
         .search-area { background: var(--surface); border: 1px solid rgba(255,255,255,0.1); padding: 10px; border-radius: 20px; display: flex; width: 100%; max-width: 600px; margin: 30px 0; }
-        input { flex: 1; background: transparent; border: none; padding: 15px; color: #fff; outline: none; }
-        button { background: var(--main); color: #000; border: none; padding: 0 30px; border-radius: 15px; font-weight: 900; cursor: pointer; }
+        input { flex: 1; background: transparent; border: none; padding: 15px; color: #fff; outline: none; font-size: 16px; }
+        button { background: var(--main); color: #000; border: none; padding: 0 30px; border-radius: 15px; font-weight: 900; cursor: pointer; transition: 0.3s; }
+        button:hover { opacity: 0.8; }
 
         .progress-box { width: 100%; max-width: 600px; display: none; margin-bottom: 40px; }
         .bar-bg { background: #111; height: 10px; border-radius: 10px; overflow: hidden; margin-top: 10px; }
@@ -32,18 +34,18 @@
         .loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); }
         .ring { width: 40px; height: 40px; border: 3px solid #222; border-top: 3px solid var(--main); border-radius: 50%; animation: spin 1s infinite linear; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .card-body { padding: 15px; font-size: 14px; font-weight: bold; text-align: center; }
+        .card-body { padding: 15px; font-size: 14px; font-weight: bold; text-align: center; color: #ddd; }
     </style>
 </head>
 <body>
     <div class="wrapper">
-        <div class="header" id="header">
+        <div class="header">
             <div class="logo">LUCKY<span>STUDIO</span></div>
         </div>
 
         <div class="search-area">
-            <input type="text" id="link" placeholder="Link do YouTube...">
-            <button onclick="ignite()">GERAR VÍDEOS DE 30 SEGUNDOS</button>
+            <input type="text" id="link" placeholder="Cole o link do YouTube aqui...">
+            <button onclick="ignite()">GERAR VÍDEOS DE 30s</button>
         </div>
 
         <div class="progress-box" id="pBox">
@@ -58,33 +60,43 @@
     </div>
 
     <script>
+        let renderizadoCompleto = false;
+
         async function ignite() {
             const link = document.getElementById('link').value;
             if(!link) return;
+            renderizadoCompleto = false;
             document.getElementById('pBox').style.display = 'block';
             document.getElementById('grid').innerHTML = '';
             await fetch('/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({link})});
-            setInterval(refresh, 2000);
+            setInterval(refresh, 2500);
         }
 
         async function refresh() {
+            if (renderizadoCompleto) return;
+
             const res = await fetch('/get_status');
             const data = await res.json();
             document.getElementById('statusLabel').innerText = data.status;
+            
             let p = 10;
-            if(data.status.includes("3/4")) p = 60;
-            if(data.status.includes("4/4")) p = 100;
+            if(data.status.includes("2/4")) p = 35;
+            if(data.status.includes("3/4")) p = 70;
+            if(data.status.includes("4/4")) {
+                p = 100;
+                renderizadoCompleto = true;
+            }
             document.getElementById('bar').style.width = p + '%';
             
             const diff = Math.floor(Date.now()/1000) - data.start_time;
             document.getElementById('timer').innerText = Math.floor(diff/60).toString().padStart(2,'0') + ":" + (diff%60).toString().padStart(2,'0');
 
-            if(data.clips.length > 0) {
+            if(data.clips && data.clips.length > 0) {
                 document.getElementById('grid').innerHTML = data.clips.map(clip => `
                     <div class="card">
                         <div class="video-box">
                             ${clip.status === 'pronto' ? `<video controls src="${clip.url}"></video>` : 
-                            `<div class="loading"><div class="ring"></div><p style="font-size:10px;margin-top:10px">CRIANDO 30s...</p></div>`}
+                            `<div class="loading"><div class="ring"></div><p style="font-size:11px;margin-top:12px;color:#00d4ff">PROCESSANDO SHORTS...</p></div>`}
                         </div>
                         <div class="card-body">${clip.title}</div>
                     </div>
